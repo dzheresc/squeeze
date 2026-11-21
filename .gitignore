@@ -8,3 +8,5 @@ build/
 clockInfo.txt
 webtalk*
 usage_statistics_webtalk.*
+# generated IP (gen_ip.tcl recreates it)
+ip/
