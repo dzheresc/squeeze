@@ -66,7 +66,7 @@ module top #(
   reg phy_ready = 1'b0;
   always @(posedge clk) begin
     if (rst) prst <= 0;
-    else if (!phy_ready) prst <= prst + 1'b1;
+    else if (prst != 120 * MS - 1) prst <= prst + 1'b1;
     phy_ready <= ~rst && (prst == 120 * MS - 1);
     eth_rstn  <= ~rst && (prst >= 10 * MS);
   end

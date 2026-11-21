@@ -84,4 +84,8 @@ rtl/ddr_ring.v      DDR4 ring writer and read-back checker
 sim/tb_ring.v       end-to-end testbench with a MIG model (wraps a 64-slot ring 3 times)
 ```
 
-Build: WNS +0.35 ns, WHS +0.015 ns; 11.6k LUTs. Simulation passes. Not yet run on hardware.
+Verified 2026-11-21 with a direct cable to the Arty running `arty_a7_35t_eth_stream` at line rate:
+WNS +0.35 ns, DONE=1, DDR4 calibrated, `fps 00024548` (148,808 frames/s). After 41.7 million frames
+(`wr 027c6128`, one full 2 GB wrap) the counters read `bad 0`, `miss 0`, `ovf 0`, `rderr 0` and
+`olderr 0`, with 40.6 million old-slot checks done. The LEDs step with the Arty every 2 s.
+Uses 11.6k LUTs (5%).

@@ -63,4 +63,6 @@ gap. That is 168 TX_CLK cycles per frame, or 25 MHz / 168 = 148,810 frames/s.
 - The frame generator is simulated against the receiver in
   [`rk_xcku5p_f_eth_ddr4/sim`](../rk_xcku5p_f_eth_ddr4/sim).
 
-Build: WNS +4.55 ns. Not yet run on hardware.
+Verified 2026-11-21 with a direct cable to the RK-XCKU5P-F running `rk_xcku5p_f_eth_ddr4`: WNS +5.16 ns,
+DONE=1, `physts 0715`, `fps 0002454a` (148,810 frames/s), and the pattern stepping every 2 s.
+The receiver stored every frame with no FCS errors and no gaps.
