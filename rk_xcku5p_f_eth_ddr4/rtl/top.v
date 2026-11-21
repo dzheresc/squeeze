@@ -1,8 +1,9 @@
-// RK-XCKU5P-F Ethernet-to-DDR4 recorder: receives the frame stream from arty_a7_35t_eth_stream
-// on the RTL8211F PHY (RGMII, 100 Mb/s), writes every good frame into the 2 GB of DDR4 as a
-// circular buffer of 64-byte slots (see ddr_ring.v), reads every slot back to check it, and
-// shows on LED1..LED4 the first payload nibble (the Arty's rolling one-hot pattern) as read
-// back from DDR4, so the LEDs only follow the Arty if the whole Ethernet -> RAM -> LED path works.
+// RK-XCKU5P-F Ethernet-to-DDR4 recorder: receives the frames from arty_a7_35t_eth_stream on
+// the RTL8211F PHY (RGMII, 100 Mb/s), writes every good frame (all 64 bytes) into the whole 2 GB
+// of DDR4 as a circular buffer of 128-byte slots (see ddr_ring.v), reads every slot back to
+// check it, and shows on LED1..LED4 the first payload nibble (the Arty's rolling one-hot
+// pattern) as read back from DDR4, so the LEDs only follow the Arty if the whole
+// Ethernet -> RAM -> LED path works.
 //   KEY1      clears the counters and restarts the ring at slot 0
 //   UART      once a second, 115200 8N1 (COM6), all values hex:
 //             "ku5p-f eth-ddr4 cal C bmsr XXXX good GGGGGGGG bad BBBBBBBB miss MMMMMMMM
@@ -13,8 +14,8 @@
 //             miss = sequence numbers skipped between good frames;
 //             ovf = good frames dropped because the FIFO in front of the DDR4 was full;
 //             wr = slots written, fps = slots written in the last second; wrap = ring wraps
-//             (2^25 slots each); rderr = read-back words that differ from what was written;
-//             old / olderr = checks of the slot written 2^20 frames earlier / failed checks;
+//             (2^24 slots of 128 B each); rderr = read-back words that differ from what was written;
+//             old / olderr = checks of the slot written 16 frames earlier / failed checks;
 //             led = the LED value. Frames are only counted once the DDR4 is calibrated.
 // Clocks: the 200 MHz board clock (T24/U24) goes straight into the MIG; everything but the
 // RGMII receiver runs on the MIG's 300 MHz ui_clk. The receiver runs on RXC (25 MHz) and hands
@@ -109,10 +110,10 @@ module top #(
   wire         f_done, f_crc_ok, f_ours;
   wire [31:0]  f_seq;
   wire [10:0]  f_len;
-  wire [367:0] f_payload;
+  wire [511:0] f_data;
   eth_rx_frame u_rx (
     .clk(rx_clk), .dv(dv_q), .rxd(rxd_q), .done(f_done), .crc_ok(f_crc_ok), .ours(f_ours),
-    .pattern(), .seq(f_seq), .len(f_len), .payload(f_payload)
+    .pattern(), .seq(f_seq), .len(f_len), .data(f_data)
   );
 
   // Counters in rx_clk, only while the DDR4 is calibrated; KEY1 clears them.
@@ -121,7 +122,7 @@ module top #(
   reg        have_seq = 1'b0;
   reg        upd = 1'b0;           // toggles after every frame, crosses into ui_clk
   reg        push = 1'b0;
-  reg [383:0] push_d = 0;
+  reg [527:0] push_d = 0;
   wire       fifo_full;
   always @(posedge rx_clk) begin
     clr_s <= {clr_s[0], ~key1_n};
@@ -137,7 +138,7 @@ module top #(
         if (have_seq && f_seq != last_seq + 1) n_miss <= n_miss + (f_seq - last_seq - 1);
         if (fifo_full) n_ovf <= n_ovf + 1'b1;
         else push <= 1'b1;
-        push_d <= {5'b00000, f_len, f_payload};
+        push_d <= {5'b00000, f_len, f_data};
       end else if (!f_crc_ok) begin
         n_bad <= n_bad + 1'b1;
       end
@@ -146,9 +147,9 @@ module top #(
   end
 
   wire         fifo_empty;
-  wire [383:0] fifo_q;
+  wire [527:0] fifo_q;
   wire         fifo_pop;
-  async_fifo #(.W(384), .AB(4)) u_fifo (
+  async_fifo #(.W(528), .AB(4)) u_fifo (
     .wclk(rx_clk), .wen(push), .wdata(push_d), .wfull(fifo_full),
     .rclk(ui_clk), .ren(fifo_pop), .rdata(fifo_q), .rempty(fifo_empty)
   );
@@ -156,7 +157,7 @@ module top #(
   // ---------------------------------------------------------------- DDR4 ring (ui_clk)
   wire [31:0] wr, wrap, rd_cnt, rderr, old, olderr;
   wire [3:0]  ring_led;
-  ddr_ring #(.SB(25), .LAG(1 << 20), .WAIT(256), .MAW(29)) u_ring (
+  ddr_ring #(.SB(24), .LAG(16), .WAIT(256), .MAW(29)) u_ring (
     .clk(ui_clk), .rst(ui_rst | ~calib_q), .clr(clr_u),
     .in_valid(~fifo_empty), .in_data(fifo_q), .in_pop(fifo_pop),
     .app_en(app_en), .app_cmd(app_cmd), .app_addr(app_addr),

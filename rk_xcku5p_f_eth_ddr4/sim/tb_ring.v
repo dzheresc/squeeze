@@ -1,6 +1,6 @@
 // End-to-end test without the PHYs: arty_a7_35t_eth_stream's frame generator -> eth_rx_frame ->
 // async_fifo -> ddr_ring -> a simple MIG native-port model (random app_rdy / app_wdf_rdy,
-// in-order read data after a fixed latency). A small ring (64 slots, old-slot check 16 back)
+// in-order read data after a fixed latency). A small ring (64 slots of 128 B, old-slot check 16 back)
 // so the test wraps several times. Then a stuck data bit in the model must show up as errors.
 `timescale 1ns/1ps
 `default_nettype none
@@ -23,22 +23,22 @@ module tb_ring;
   wire f_done, f_crc_ok, f_ours;
   wire [31:0] f_seq;
   wire [10:0] f_len;
-  wire [367:0] f_payload;
+  wire [511:0] f_data;
   eth_rx_frame u_rx (.clk(rx_clk), .dv(tx_en), .rxd(txd), .done(f_done), .crc_ok(f_crc_ok),
-                     .ours(f_ours), .pattern(), .seq(f_seq), .len(f_len), .payload(f_payload));
+                     .ours(f_ours), .pattern(), .seq(f_seq), .len(f_len), .data(f_data));
   reg push = 0;
-  reg [383:0] push_d = 0;
+  reg [527:0] push_d = 0;
   wire full, empty, pop;
-  wire [383:0] q;
+  wire [527:0] q;
   integer n_ovf = 0;
   always @(posedge rx_clk) begin
     push <= 1'b0;
     if (f_done && f_ours) begin
       if (full) n_ovf = n_ovf + 1; else push <= 1'b1;
-      push_d <= {5'b0, f_len, f_payload};
+      push_d <= {5'b0, f_len, f_data};
     end
   end
-  async_fifo #(.W(384), .AB(4)) u_fifo (.wclk(rx_clk), .wen(push), .wdata(push_d), .wfull(full),
+  async_fifo #(.W(528), .AB(4)) u_fifo (.wclk(rx_clk), .wen(push), .wdata(push_d), .wfull(full),
                                        .rclk(ui_clk), .ren(pop), .rdata(q), .rempty(empty));
 
   // ---- ring
@@ -59,12 +59,12 @@ module tb_ring;
     .rd_err(rderr), .old_cnt(old), .old_err(olderr), .led(led));
 
   // ---- MIG model
-  reg [255:0] mem [0:(1 << (SB + 1)) - 1];
+  reg [255:0] mem [0:(1 << (SB + 2)) - 1];
   reg [255:0] rq_data [0:63];
   integer rq_t [0:63];
   integer rq_w = 0, rq_r = 0, cyc = 0, bad_wr = 0;
-  reg stuck = 0;                         // forces data bit 5 of every write to 1
-  wire [SB:0] widx = app_addr[SB+3:3];
+  reg stuck = 0;                         // forces bit 5 of byte 14 (the pattern byte) of every write to 1
+  wire [SB+1:0] widx = app_addr[SB+4:3];
   reg rv = 0;
   assign rd_valid = rv;
   always @(posedge ui_clk) begin
@@ -72,10 +72,10 @@ module tb_ring;
     app_rdy     <= ($random & 3) != 0;
     app_wdf_rdy <= ($random & 7) != 0;
     if (app_en && app_rdy) begin
-      if (app_addr[2:0] != 0 || app_addr[28:SB+4] != 0) bad_wr = bad_wr + 1;
+      if (app_addr[2:0] != 0 || app_addr[28:SB+5] != 0) bad_wr = bad_wr + 1;
       if (app_cmd == 3'd0) begin
         if (!app_wdf_wren) bad_wr = bad_wr + 1;
-        mem[widx] <= app_wdf_data | (stuck ? 256'h20 : 256'h0);
+        mem[widx] <= app_wdf_data | (stuck ? (256'h1 << 117) : 256'h0);
       end else begin
         rq_data[rq_w % 64] = mem[widx];
         rq_t[rq_w % 64] = cyc + 20;
@@ -107,7 +107,7 @@ module tb_ring;
   endtask
 
   initial begin
-    for (i = 0; i < (1 << (SB + 1)); i = i + 1) mem[i] = 0;
+    for (i = 0; i < (1 << (SB + 2)); i = i + 1) mem[i] = 0;
     repeat (20) @(posedge ui_clk); rst <= 0;
     send(NFR);
     $display("clean: wr=%0d wrap=%0d rd=%0d rderr=%0d old=%0d olderr=%0d ovf=%0d led=%b pattern=%b",
@@ -116,12 +116,12 @@ module tb_ring;
         olderr != 0 || n_ovf != 0 || led != pattern || bad_wr != 0) begin
       $display("FAIL clean run"); errors = errors + 1;
     end
-    // slot 0 holds frame 192 (= 3 * 64): payload byte 0 = pattern, bytes 1..4 = seq 193
+    // slot 0 holds frame 192 (= 3 * 64): frame bytes 15..18 = seq 193
     $display("slot 0: %h", mem[0]);
-    if (mem[0][39:8] != 32'hC1000000) begin
+    if (mem[0][151:120] != 32'hC1000000) begin
       $display("FAIL slot 0 seq"); errors = errors + 1;
     end
-    if (mem[1][159:128] != 192 || mem[1][255:224] != {"4", "R", "D", "D"} || mem[1][191:160] != 3) begin
+    if (mem[2][63:32] != 192 || mem[2][255:224] != {"4", "R", "D", "D"} || mem[2][95:64] != 3 || mem[2][15:0] != 64) begin
       $display("FAIL slot 0 metadata"); errors = errors + 1;
     end
     stuck = 1;

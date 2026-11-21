@@ -1,12 +1,12 @@
-// Arty A7-35T Ethernet stream sender: sends minimum-size raw Ethernet frames (EtherType 88B5,
-// see eth_tx_frame.v) back to back at the 100 Mb/s line rate through the on-board TI DP83848J
-// PHY (MII). Every frame carries a new sequence number; the one-hot 4-bit pattern in the first
-// payload byte rolls over only every 2 s, so a receiver that shows it on LEDs blinks visibly.
+// Arty A7-35T Ethernet frame sender: keeps a rolling one-hot 4-bit pattern and sends it in
+// minimum-size raw Ethernet frames (EtherType 88B5, see eth_tx_frame.v), 4 frames a second by
+// default, through the on-board TI DP83848J PHY (MII). Every frame carries the next pattern and
+// a new sequence number.
 // rk_xcku5p_f_eth_ddr4 receives the stream, stores every frame in DDR4 and drives its LEDs from
 // the copy read back from RAM.
-//   LD4..LD7   current pattern (0001 -> 0010 -> 0100 -> 1000 -> 0001 ..., every 2 s)
+//   LD4..LD7   current pattern (0001 -> 0010 -> 0100 -> 1000 -> 0001 ..., one step per frame)
 //   LD0 green  PHY link up (PHYSTS bit 0), dim
-//   SW1..SW0   frame rate: 00 line rate (~148.8k frames/s), 01 10k/s, 10 1k/s, 11 100/s
+//   SW1..SW0   frame rate: 00 4/s, 01 100/s, 10 10k/s, 11 line rate (~148.8k frames/s)
 //   ck_rst     red RESET button: resets the PHY, the pattern and the sequence number
 //   UART       once a second, 115200 8N1 (COM3), all values hex:
 //              "arty eth stream sent SSSSSSSS fps FFFFFFFF led L sw S bmsr XXXX physts XXXX"
@@ -14,7 +14,7 @@
 //              PHYSTS (DP83848 reg 0x10): bit 0 link, bit 1 = 10 Mb/s, bit 2 = full duplex.
 // Clocks: 100 MHz oscillator; an MMCM makes the PHY's 25 MHz reference clock (eth_ref_clk). The
 // PHY returns the 25 MHz MII transmit clock eth_tx_clk, which runs the frame generator, the
-// pattern timer and the frame counters.
+// frame timer and the frame counters.
 `default_nettype none
 module top #(
   parameter integer CLK_HZ = 100_000_000,
@@ -82,19 +82,18 @@ module top #(
 
   // Frame period in TX_CLK cycles (one nibble each). A minimum frame is 72 bytes with the
   // preamble = 144 cycles, plus at least 24 cycles (12 bytes) of inter-frame gap.
-  reg [17:0] period;
+  reg [22:0] period;
   always @* begin
     case (sw_s[3:2])
-      2'd0: period = 18'd168;                // line rate: 25e6 / 168 = 148.8k frames/s
-      2'd1: period = TX_HZ / 10_000;
-      2'd2: period = TX_HZ / 1_000;
-      default: period = TX_HZ / 100;
+      2'd0: period = TX_HZ / 4;
+      2'd1: period = TX_HZ / 100;
+      2'd2: period = TX_HZ / 10_000;
+      default: period = 23'd168;             // line rate: 25e6 / 168 = 148.8k frames/s
     endcase
   end
 
-  reg [17:0] since = 0;           // cycles since the last start
-  reg [$clog2(2 * TX_HZ)-1:0] pat_div = 0;
-  reg [3:0]  pattern = 4'b0001;
+  reg [22:0] since = 0;           // cycles since the last start
+  reg [3:0]  pattern = 4'b1000;   // rotated before each frame: the first carries 0001
   reg [31:0] seq = 0;             // sequence number of the frame being sent; first = 1
   reg        start = 1'b0;
   wire       busy;
@@ -102,20 +101,14 @@ module top #(
     start <= 1'b0;
     if (!run) begin
       since   <= 0;
-      pat_div <= 0;
-      pattern <= 4'b0001;
+      pattern <= 4'b1000;
       seq     <= 0;
     end else begin
-      if (pat_div == 2 * TX_HZ - 1) begin
-        pat_div <= 0;
-        pattern <= {pattern[2:0], pattern[3]};
-      end else begin
-        pat_div <= pat_div + 1'b1;
-      end
-      if (since != 18'h3FFFF) since <= since + 1'b1;
+      if (since != 23'h7FFFFF) since <= since + 1'b1;
       if (!busy && !start && since >= period - 1) begin
         start <= 1'b1;
-        seq   <= seq + 1'b1;
+        seq     <= seq + 1'b1;
+        pattern <= {pattern[2:0], pattern[3]};
         since <= 0;
       end
     end

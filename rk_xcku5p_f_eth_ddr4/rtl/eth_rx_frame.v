@@ -1,8 +1,8 @@
 // Receives Ethernet frames from a 4-bit receive path (MII, or RGMII at 10/100 where each
 // nibble is held for a whole RX clock), low nibble first, and checks the frames sent by
 // arty_a7_35t_eth and arty_a7_35t_eth_stream: EtherType 88B5, byte 14 = LED pattern,
-// bytes 15..18 = sequence number. payload = frame bytes 14..59, the 46 payload bytes of a
-// minimum-size frame, frame byte 14 in bits 7:0.
+// bytes 15..18 = sequence number. data = the first 64 bytes after the SFD, which is a whole
+// minimum-size frame with its FCS, byte 0 in bits 7:0.
 // done pulses once per frame (when dv drops) with the results below valid.
 `default_nettype none
 module eth_rx_frame (
@@ -15,7 +15,7 @@ module eth_rx_frame (
   output reg  [3:0]  pattern = 4'h0,
   output reg  [31:0] seq = 0,
   output reg  [10:0] len = 0,          // bytes after the SFD, FCS included
-  output reg  [367:0] payload = 0
+  output reg  [511:0] data = 0
 );
   localparam [1:0] S_IDLE = 2'd0, S_PRE = 2'd1, S_DATA = 2'd2, S_SKIP = 2'd3;
   reg [1:0]  st = S_IDLE;
@@ -26,7 +26,7 @@ module eth_rx_frame (
   reg [15:0] etype = 0;
   reg [3:0]  pat = 0;
   reg [31:0] sq = 0;
-  reg [367:0] pl = 0;
+  reg [511:0] fb = 0;
   wire [7:0] byte_in = {rxd, lo};
   wire [31:0] crc_next;
   crc32_d8 u_crc (.crc(crc), .data(byte_in), .next(crc_next));
@@ -48,7 +48,7 @@ module eth_rx_frame (
           ours    <= !hi && n >= 64 && crc == 32'hDEBB20E3 && etype == 16'h88B5;
           pattern <= pat;
           seq     <= sq;
-          payload <= pl;
+          data    <= fb;
           st      <= S_IDLE;
         end else if (!hi) begin
           lo <= rxd;
@@ -57,7 +57,7 @@ module eth_rx_frame (
           hi  <= 1'b0;
           crc <= crc_next;
           if (n != 11'h7FF) n <= n + 1'b1;
-          if (n >= 14 && n < 60) pl[8 * (n - 14) +: 8] <= byte_in;
+          if (n < 64) fb[8 * n +: 8] <= byte_in;
           case (n)
             12: etype[15:8] <= byte_in;
             13: etype[7:0]  <= byte_in;
