@@ -1,0 +1,10 @@
+# Vivado outputs and scratch
+build/
+.Xil/
+.cache/
+*.jou
+*.log
+*.str
+clockInfo.txt
+webtalk*
+usage_statistics_webtalk.*
