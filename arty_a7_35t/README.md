@@ -3,10 +3,11 @@
 Part `xc7a35ticsg324-1L`, 100 MHz oscillator, FT2232H USB (channel A = JTAG, channel B = UART).
 Toolchain: Vivado 2024.2 at `C:\Xilinx\Vivado\2024.2`.
 
-## Build and load
+## Build, simulate and load
 
 ```powershell
 .\build.ps1      # ~2 min, writes build\top.bit and build\top.bin
+.\sim\sim.ps1    # xsim: whole design at a scaled clock, UART decoded and checked (no board needed)
 .\program.ps1    # JTAG load via hw_server localhost:3121 (volatile)
 ```
 

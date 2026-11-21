@@ -12,10 +12,11 @@ printing results on the USB UART.
 | Clocks | 200 MHz differential board clock (T24/U24) straight into the MIG |
 | Pins | from the vendor's `ddr4_0_ex` example design |
 
-## Build and load
+## Build, simulate and load
 
 ```powershell
 .\build.ps1      # first run also generates the MIG into ip\ (~1 min); build ~12 min
+.\sim\sim.ps1    # xsim: memtest engine vs a MIG native-port model (backpressure, injected bit error)
 .\program.ps1    # JTAG load (volatile)
 ```
 
@@ -49,4 +50,5 @@ gen_ip.tcl        creates ip/ddr4_0 (not committed)
 rtl/top.v         MIG, test sequencer, UART report, LEDs
 rtl/ddr_memtest.v full-rate pattern write/verify engine (same as arty_a7_35t_ddr3, 8 lanes here)
 rtl/uart_tx.v     8N1 transmitter
+sim/tb_memtest.v  memtest testbench with a behavioural MIG model
 ```

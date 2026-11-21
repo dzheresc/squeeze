@@ -4,10 +4,11 @@ Part `xcku5p-ffvb676-2-i`, IDCODE `04A62093`. One USB-C port with an FT2232H
 (channel A = JTAG, hw_server target `Xilinx/0ABC01A`; channel B = UART, COM6 on the Dell).
 Toolchain: Vivado 2024.2 at `C:\Xilinx\Vivado\2024.2`.
 
-## Build and load
+## Build, simulate and load
 
 ```powershell
 .\build.ps1      # ~3 min, writes build\top.bit
+.\sim\sim.ps1    # xsim: whole design at a scaled clock, SYSMONE4 model at 45.0 C, UART checked
 .\program.ps1    # JTAG load via hw_server localhost:3121 (volatile)
 ```
 

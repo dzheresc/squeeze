@@ -12,10 +12,11 @@ printing results on the USB UART.
 | MIG settings | `mig_ddr3.prj`, from Digilent's Arty A7-35 board-store file, switched to native port and no-buffer clocks |
 | Clocks | 100 MHz board clock -> MMCM -> 100 MHz MIG system clock + 200 MHz IDELAY reference |
 
-## Build and load
+## Build, simulate and load
 
 ```powershell
 .\build.ps1      # first run also generates the MIG into ip\ (~1 min); build ~5 min
+.\sim\sim.ps1    # xsim: memtest engine vs a MIG native-port model (backpressure, injected bit error)
 .\program.ps1    # JTAG load (volatile)
 ```
 
@@ -48,4 +49,5 @@ gen_ip.tcl        creates ip/mig_ddr3 (not committed)
 rtl/top.v         clocks, MIG, test sequencer, UART report, LEDs
 rtl/ddr_memtest.v full-rate pattern write/verify engine on the MIG native port
 rtl/uart_tx.v     8N1 transmitter
+sim/tb_memtest.v  memtest testbench with a behavioural MIG model
 ```
