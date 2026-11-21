@@ -11,3 +11,5 @@ usage_statistics_webtalk.*
 # generated IP (gen_ip.tcl recreates it)
 ip/
 .tmpCRC/
+# simulator scratch
+**/sim/work/
