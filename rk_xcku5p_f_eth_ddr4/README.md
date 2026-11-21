@@ -25,13 +25,14 @@ follow the Arty if the whole Ethernet -> FIFO -> DDR4 -> LED path works.
 | USB UART (COM6) | one status line a second, 115200 8N1 |
 
 ```
-ku5p-f eth-ddr4 cal 1 bmsr 79ad good 000001a2 bad 00000000 miss 00000000 ovf 00000000 wr 000001a2 fps 00000004 wrap 00000000 rderr 00000000 old 00000192 olderr 00000000 led 4
+ku5p-f eth-ddr4 cal 1 bmsr 79ad gbcr 0000 good 000001a2 bad 00000000 miss 00000000 ovf 00000000 wr 000001a2 fps 00000004 wrap 00000000 rderr 00000000 old 00000192 olderr 00000000 led 4
 ```
 
 | Field | Meaning |
 |---|---|
 | `cal` | DDR4 calibrated (frames are only counted and stored after this) |
 | `bmsr` | PHY register 1; bit 2 = link up |
+| `gbcr` | PHY register 9, the 1000BASE-T advertisement; `0000` once cleared at start-up |
 | `good` / `bad` | frames of ours with a correct FCS / frames with a wrong FCS or shorter than 64 bytes |
 | `miss` | sequence numbers skipped between good frames |
 | `ovf` | good frames dropped because the FIFO in front of the DDR4 was full |
@@ -75,6 +76,13 @@ All numbers are hex.
   also run on `ui_clk`.
 - RGMII receive is the same as in `rk_xcku5p_f_eth`: RXD/RXCTL are sampled on the falling edge of
   RXC, mid-nibble, so the PHY's RX delay strap doesn't matter at 100 Mb/s.
+- The receiver only handles 10/100, but the RTL8211F would link at 1000 Mb/s to a gigabit
+  switch. So on the first second after configuration, MDIO (`rtl/mdio_rw.v`) writes 0 to
+  register 9, which stops the PHY advertising 1000BASE-T, and 0x1200 to register 0, which
+  restarts auto-negotiation. The link then comes up at 100 Mb/s with either the Arty directly or
+  a gigabit switch such as the TL-SG105 in between. The Arty's frames go to the broadcast
+  address, so an unmanaged switch floods them to every port. Keep the Arty at 4 frames/s when
+  other devices share the switch.
 
 ## Files
 
@@ -84,7 +92,9 @@ rtl/top.v           MIG, RGMII capture, counters, UART report
 rtl/eth_rx_frame.v  frame parser + CRC check + frame capture
 rtl/async_fifo.v    RXC -> ui_clk frame FIFO
 rtl/ddr_ring.v      DDR4 ring writer and read-back checker
+rtl/mdio_rw.v       clause 22 MDIO read and write
 sim/tb_ring.v       end-to-end testbench with a MIG model (wraps a 64-slot ring 3 times)
+sim/tb_mdio.v       MDIO write and read framing
 ```
 
 Verified 2026-11-21 with a direct cable to the Arty running `arty_a7_35t_eth_stream`: WNS +0.42 ns,
@@ -93,3 +103,6 @@ the LEDs stepping with the Arty's on every frame. The UART samples once a second
 frames/s and a 4-step pattern its `led` field shows the same value each time. With the Arty at
 line rate, 1.5 million frames were stored the same way with no errors. The 64-byte-slot version
 of this design also ran 41.7 million frames at line rate, past a full 2 GB wrap, with no errors.
+
+Update 2026-11-21: the start-up MDIO writes that turn off the PHY's gigabit advertisement (for a
+gigabit switch) pass simulation and build with WNS +0.57 ns. They are not yet tested on hardware.

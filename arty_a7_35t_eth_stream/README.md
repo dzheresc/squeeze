@@ -5,8 +5,13 @@ raw Ethernet frame through the Arty's 10/100 PHY (TI DP83848J, MII), 4 frames a 
 pattern steps once per frame, and every frame carries a new sequence number. The switches raise
 the rate up to the full 100 Mb/s line rate for stress tests. The receiver is
 [`rk_xcku5p_f_eth_ddr4`](../rk_xcku5p_f_eth_ddr4). It stores every frame in DDR4 and drives its
-LEDs from the copy it reads back. Use a plain patch cable between the two RJ45 jacks. The link
-comes up at 100 Mb/s full duplex.
+LEDs from the copy it reads back.
+
+Connect the two RJ45 jacks with a plain patch cable, or through an unmanaged switch such as the
+TP-Link TL-SG105 (gigabit). The frames go to the broadcast address, so the switch floods
+them to every port. That is harmless at 4 frames/s, but at line rate it fills every port with
+100 Mb/s of broadcast. The Arty's PHY links at 100 Mb/s at most. The KU5P-F stops its gigabit
+PHY from advertising 1000BASE-T so it also links at 100 Mb/s to a gigabit switch (see its README).
 
 The frame format is the one from [`arty_a7_35t_eth`](../arty_a7_35t_eth) (one frame a second),
 except the padding now carries data.
