@@ -11,6 +11,8 @@ starter project (RTL in Verilog, Vivado 2024.2 non-project Tcl build, JTAG progr
 | [rk_xcku5p_f_ddr4](rk_xcku5p_f_ddr4) | RK-XCKU5P-F V1.2 | xcku5p-ffvb676-2-i | 2 GB DDR4 via MIG at 2400 MT/s, endless memory test on the UART, verified on hardware |
 | [arty_a7_35t_eth](arty_a7_35t_eth) | Digilent Arty A7-35T | xc7a35ticsg324-1L | Ethernet sender: rolling LED pattern in a raw frame once a second (MII, 100 Mb/s), verified on hardware |
 | [rk_xcku5p_f_eth](rk_xcku5p_f_eth) | RK-XCKU5P-F V1.2 | xcku5p-ffvb676-2-i | Ethernet receiver: shows the Arty's LED pattern, FCS and sequence checks on the UART (RGMII, RTL8211F), verified on hardware |
+| [arty_a7_35t_eth_stream](arty_a7_35t_eth_stream) | Digilent Arty A7-35T | xc7a35ticsg324-1L | Ethernet sender: rolling one-hot pattern, one step per frame, 4 frames/s (up to line rate on SW1..0) |
+| [rk_xcku5p_f_eth_ddr4](rk_xcku5p_f_eth_ddr4) | RK-XCKU5P-F V1.2 | xcku5p-ffvb676-2-i | Ethernet -> DDR4 ring recorder: every whole frame into all 2 GB, LEDs from RAM read-back, counters on the UART, verified on hardware |
 
 Common layout of a board folder:
 
