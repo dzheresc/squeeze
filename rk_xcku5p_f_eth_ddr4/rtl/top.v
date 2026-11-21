@@ -6,10 +6,12 @@
 // Ethernet -> RAM -> LED path works.
 //   KEY1      clears the counters and restarts the ring at slot 0
 //   UART      once a second, 115200 8N1 (COM6), all values hex:
-//             "ku5p-f eth-ddr4 cal C bmsr XXXX good GGGGGGGG bad BBBBBBBB miss MMMMMMMM
+//             "ku5p-f eth-ddr4 cal C bmsr XXXX gbcr XXXX good GGGGGGGG bad BBBBBBBB miss MMMMMMMM
 //              ovf OOOOOOOO wr WWWWWWWW fps FFFFFFFF wrap RRRRRRRR rderr EEEEEEEE
 //              old OOOOOOOO olderr EEEEEEEE led L"
-//             cal = DDR4 calibrated; bmsr = PHY reg 1 (bit 2 = link);
+//             cal = DDR4 calibrated; bmsr = PHY reg 1 (bit 2 = link); gbcr = PHY reg 9, the
+//             1000BASE-T advertisement, cleared at start-up (0000) so the PHY links at 100 Mb/s
+//             even to a gigabit switch;
 //             good / bad = frames of ours with a good FCS / frames with a bad FCS or too short;
 //             miss = sequence numbers skipped between good frames;
 //             ovf = good frames dropped because the FIFO in front of the DDR4 was full;
@@ -195,26 +197,53 @@ module top #(
     end
   end
 
-  // ---------------------------------------------------------------- MDIO: BMSR of PHY 0
+  // ---------------------------------------------------------------- MDIO, PHY address 0
+  // On the first tick: clear the 1000BASE-T advertisement (reg 9 = 0) and restart
+  // auto-negotiation (reg 0 = 1200: AN enable + restart), so that the PHY settles on 100 Mb/s
+  // even with a gigabit partner. The receiver here only handles 10/100. Then once a second,
+  // read BMSR (reg 1) and reg 9 back for the UART line.
   wire        md_busy, md_done, md_o, md_oe;
   wire [15:0] md_data;
-  reg         md_start = 1'b0;
-  reg  [15:0] bmsr = 16'h0000;
+  reg         md_start = 1'b0, md_wr = 1'b0;
+  reg  [4:0]  md_reg = 5'd0;
+  reg  [15:0] md_wdata = 16'h0000;
+  reg  [15:0] bmsr = 16'h0000, gbcr = 16'hFFFF;
   reg         status_done = 1'b0;
-  reg         md_wait = 1'b0;
+  reg  [2:0]  md_step = 3'd0;
+  localparam [2:0] M_IDLE = 3'd0, M_W9 = 3'd1, M_W0 = 3'd2, M_BMSR = 3'd3, M_GBCR = 3'd4;
+  reg         md_init = 1'b0;
   always @(posedge ui_clk) begin
     md_start    <= 1'b0;
     status_done <= 1'b0;
-    if (!md_wait) begin
-      if (tick) begin md_start <= 1'b1; md_wait <= 1'b1; end
-    end else if (md_done) begin
-      bmsr <= md_data; status_done <= 1'b1; md_wait <= 1'b0;
-    end
+    case (md_step)
+      M_IDLE: if (tick) begin
+        md_start <= 1'b1;
+        if (!md_init) begin
+          md_wr <= 1'b1; md_reg <= 5'd9; md_wdata <= 16'h0000; md_step <= M_W9;
+        end else begin
+          md_wr <= 1'b0; md_reg <= 5'd1; md_step <= M_BMSR;
+        end
+      end
+      M_W9: if (md_done) begin
+        md_wr <= 1'b1; md_reg <= 5'd0; md_wdata <= 16'h1200; md_start <= 1'b1;
+        md_step <= M_W0;
+      end
+      M_W0: if (md_done) begin
+        md_init <= 1'b1; md_wr <= 1'b0; md_reg <= 5'd1; md_start <= 1'b1; md_step <= M_BMSR;
+      end
+      M_BMSR: if (md_done) begin
+        bmsr <= md_data; md_reg <= 5'd9; md_start <= 1'b1; md_step <= M_GBCR;
+      end
+      M_GBCR: if (md_done) begin
+        gbcr <= md_data; status_done <= 1'b1; md_step <= M_IDLE;
+      end
+      default: md_step <= M_IDLE;
+    endcase
   end
-  mdio_rd #(.CLK_HZ(UI_HZ)) u_mdio (
-    .clk(ui_clk), .start(md_start), .phyad(5'd0), .regad(5'd1), .busy(md_busy),
-    .done(md_done), .data(md_data), .mdc(phy_mdc), .mdio_o(md_o), .mdio_oe(md_oe),
-    .mdio_i(phy_mdio)
+  mdio_rw #(.CLK_HZ(UI_HZ)) u_mdio (
+    .clk(ui_clk), .start(md_start), .wr(md_wr), .phyad(5'd0), .regad(md_reg),
+    .wdata(md_wdata), .busy(md_busy), .done(md_done), .data(md_data), .mdc(phy_mdc),
+    .mdio_o(md_o), .mdio_oe(md_oe), .mdio_i(phy_mdio)
   );
   assign phy_mdio = md_oe ? md_o : 1'bz;
 
@@ -235,9 +264,10 @@ module top #(
     end
   endfunction
 
-  // "ku5p-f eth-ddr4 cal " 1 " bmsr " 4 " good " 8 " bad " 8 " miss " 8 " ovf " 8 " wr " 8
+  // "ku5p-f eth-ddr4 cal " 1 " bmsr " 4 " gbcr " 4 " good " 8 " bad " 8 " miss " 8 " ovf " 8
+  // " wr " 8
   // " fps " 8 " wrap " 8 " rderr " 8 " old " 8 " olderr " 8 " led " 1 CR LF
-  localparam integer LMAX = 20 + 1 + 6 + 4 + 6 + 8 + 5 + 8 + 6 + 8 + 5 + 8 + 4 + 8 + 5 + 8
+  localparam integer LMAX = 20 + 1 + 6 + 4 + 6 + 4 + 6 + 8 + 5 + 8 + 6 + 8 + 5 + 8 + 4 + 8 + 5 + 8
                             + 6 + 8 + 7 + 8 + 5 + 8 + 8 + 8 + 5 + 1 + 2;
   reg  [8*LMAX-1:0] line = 0;
   reg  [7:0]        nleft = 0;
@@ -248,6 +278,7 @@ module top #(
     if (nleft == 0) begin
       if (status_done) begin
         line  <= {"ku5p-f eth-ddr4 cal ", hex({3'b000, calib_q}), " bmsr ", hex4(bmsr),
+                  " gbcr ", hex4(gbcr),
                   " good ", hex8(good), " bad ", hex8(bad), " miss ", hex8(miss),
                   " ovf ", hex8(ovf), " wr ", hex8(wr), " fps ", hex8(fps),
                   " wrap ", hex8(wrap), " rderr ", hex8(rderr), " old ", hex8(old),
