@@ -1,0 +1,23 @@
+# Volatile JTAG load of build/top.bit into the RK-XCKU5P-F (no flash access).
+#   C:\Xilinx\Vivado\2024.2\bin\vivado.bat -mode batch -nojournal -log build/program.log -source program.tcl [-tclargs host:port]
+# (or just .\program.ps1)
+set url [expr {[llength $argv] > 0 ? [lindex $argv 0] : "localhost:3121"}]
+set d [file normalize [file dirname [info script]]]
+open_hw_manager
+connect_hw_server -url $url
+set dev ""
+foreach t [get_hw_targets] {
+  open_hw_target $t
+  set dev [lindex [get_hw_devices -quiet xcku5p*] 0]
+  if {$dev ne ""} { puts "KU5P on target $t"; break }
+  close_hw_target $t
+}
+if {$dev eq ""} { error "No xcku5p on any JTAG target of $url" }
+current_hw_device $dev
+set_property PROGRAM.FILE $d/build/top.bit $dev
+program_hw_devices $dev
+refresh_hw_device $dev
+puts "DONE pin: [get_property {REGISTER.CONFIG_STATUS.BIT[14]_DONE_PIN} $dev]"
+close_hw_target
+disconnect_hw_server
+close_hw_manager
